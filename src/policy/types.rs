@@ -116,7 +116,7 @@ impl fmt::Display for Money {
     }
 }
 
-#[derive(Debug, Clone, thiserror::Error)]
+#[derive(Debug, Clone, Copy, thiserror::Error)]
 pub enum MoneyError {
     #[error("Money cannot be negative: {0}")]
     Negative(Decimal),
@@ -157,7 +157,7 @@ impl fmt::Display for BasisPoints {
     }
 }
 
-#[derive(Debug, Clone, thiserror::Error)]
+#[derive(Debug, Clone, Copy, thiserror::Error)]
 pub enum BasisPointsError {
     #[error("Basis points out of range (0-10000): {0}")]
     OutOfRange(u32),
