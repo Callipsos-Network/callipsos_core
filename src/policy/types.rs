@@ -275,7 +275,7 @@ impl fmt::Display for RuleId {
     }
 }
 
-// ── Violations ──────────────────────────────────────────────
+// ── Violations (Cannot Evaluate Reason newtype) ──────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum CannotEvaluateReason {
@@ -465,6 +465,9 @@ pub struct EvaluationContext {
     pub current_protocol_exposure_usd: Money,
     pub daily_spend_usd: Money,
     pub audited_protocols: Vec<ProtocolId>,
+    pub protocol_risk_score: Option<RiskScore>,
+    pub protocol_utilization: Option<BasisPoints>,
+    pub protocol_tvl: Option<Money>,
 }
 
 // ── Decision + PolicyVerdict ────────────────────────────────
