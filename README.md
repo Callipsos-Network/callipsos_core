@@ -259,21 +259,29 @@ Setting up demo environment...
 
 ### Video Walkthrough
 
-[Demo video will be added before submission]
+**[Watch the full demo (5 min)](https://www.loom.com/share/c3c89e5364704f9180d586185fc886c3)** — See the chaos agent attempt multiple DeFi transactions, get constrained by policy rules, and receive cryptographic signatures for approved verdicts.
+
+[![Callipsos Demo](./assets/callipsos_thumbnail.png)](https://www.loom.com/share/c3c89e5364704f9180d586185fc886c3)
 
 ### Screenshots
 
-**1. Policy Creation via NLP**
-*Agent translates "only audited protocols, max $200/day" into structured PolicyRule JSON*
+**1. NLP Semantic Policy Mapping**
 
-**2. Transaction Validation**
-*Approved transaction with Lit PKP signature (0xd8f89364...)*
+![NLP Mapping](./assets/nlp_mapping.png)
 
-**3. Blocked Transaction**
-*Transaction blocked with clear violation reasons*
+*Agent translates natural language ("only audited protocols, max $200/day") into structured PolicyRule JSON using the SetPolicyTool*
 
-**4. Agent Summary**
-*Educational summary showing what passed, what failed, and yield calculations*
+**2. Lit Protocol PKP Signing**
+
+![Lit Signing](./assets/lit_signing.png)
+
+*Approved transactions receive 65-byte ECDSA signatures from Lit Protocol PKP running in TEE — signature proves policy validation succeeded*
+
+**3. Blocked Transaction with Violation Details**
+
+![Blocked Transaction](./assets/blocked_tx.png)
+
+*Transactions that violate policy rules are blocked with clear, human-readable reasons for each failed rule*
 
 ---
 
