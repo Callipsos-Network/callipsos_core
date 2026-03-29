@@ -1,4 +1,6 @@
 use serde::{Deserialize, Serialize};
+use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive;
 
 use crate::policy::types::{
     Action, BasisPoints, CannotEvaluateReason, EvaluationContext, Money,
@@ -21,6 +23,8 @@ pub enum PolicyRule {
     MinRiskScore(RiskScore),
     MaxProtocolUtilization(BasisPoints),
     MinProtocolTvl(Money),
+    MinAlternativesConsidered(u32),
+    MaxConfidenceThreshold(RiskScore),
 }
 
 impl PolicyRule {
@@ -299,6 +303,84 @@ impl PolicyRule {
                     ),
                 ),
             },
+
+            // ── 11. MinAlternativesConsidered ───────────────
+            PolicyRule::MinAlternativesConsidered(min) => {
+                match &context.reasoning {
+                    None => RuleResult::indeterminate(
+                        RuleId::MinAlternativesConsidered,
+                        Violation::CannotEvaluate(CannotEvaluateReason::MissingContext(
+                            "reasoning_trace".into(),
+                        )),
+                        "cannot evaluate reasoning: no reasoning trace provided",
+                    ),
+                    Some(trace) => {
+                        let count = trace.alternatives_considered.len() as u32;
+                        if count < *min {
+                            RuleResult::fail(
+                                RuleId::MinAlternativesConsidered,
+                                Violation::InsufficientAlternatives {
+                                    considered: count,
+                                    minimum_required: *min,
+                                },
+                                format!(
+                                    "agent considered {} alternatives, minimum {} required",
+                                    count, min,
+                                ),
+                            )
+                        } else {
+                            RuleResult::pass(
+                                RuleId::MinAlternativesConsidered,
+                                format!(
+                                    "agent considered {} alternatives, meets {} minimum",
+                                    count, min,
+                                ),
+                            )
+                        }
+                    }
+                }
+            }
+
+            // ── 12. MaxConfidenceThreshold ───────────────────
+            PolicyRule::MaxConfidenceThreshold(max) => {
+                match &context.reasoning {
+                    None => RuleResult::indeterminate(
+                        RuleId::MaxConfidenceThreshold,
+                        Violation::CannotEvaluate(CannotEvaluateReason::MissingContext(
+                            "reasoning_trace".into(),
+                        )),
+                        "cannot evaluate confidence: no reasoning trace provided",
+                    ),
+                    Some(trace) => {
+                        let confidence_decimal = Decimal::from_f64_retain(trace.confidence)
+                            .unwrap_or(Decimal::ONE);
+                        let confidence_rs = RiskScore::try_new(confidence_decimal)
+                            .unwrap_or_else(|_| RiskScore::try_new(Decimal::ONE).unwrap());
+
+                        if confidence_rs > *max {
+                            RuleResult::fail(
+                                RuleId::MaxConfidenceThreshold,
+                                Violation::ConfidenceTooHigh {
+                                    stated_confidence: trace.confidence,
+                                    max_allowed: max.inner().to_f64().unwrap_or(1.0),
+                                },
+                                format!(
+                                    "agent confidence {:.2} exceeds {:.2} threshold — high confidence on novel actions is suspicious",
+                                    trace.confidence, max,
+                                ),
+                            )
+                        } else {
+                            RuleResult::pass(
+                                RuleId::MaxConfidenceThreshold,
+                                format!(
+                                    "agent confidence {:.2} within {:.2} threshold",
+                                    trace.confidence, max,
+                                ),
+                            )
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -314,6 +396,8 @@ impl PolicyRule {
             PolicyRule::MinRiskScore(_) => RuleId::MinRiskScore,
             PolicyRule::MaxProtocolUtilization(_) => RuleId::MaxProtocolUtilization,
             PolicyRule::MinProtocolTvl(_) => RuleId::MinProtocolTvl,
+            PolicyRule::MinAlternativesConsidered(_) => RuleId::MinAlternativesConsidered,
+            PolicyRule::MaxConfidenceThreshold(_) => RuleId::MaxConfidenceThreshold,
         }
     }
 }

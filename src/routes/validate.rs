@@ -126,6 +126,7 @@ fn convert_request(req: &ValidateRequest) -> Result<(TransactionRequest, Evaluat
         protocol_risk_score,
         protocol_utilization,
         protocol_tvl,
+        reasoning: None,
     };
 
     Ok((tx_request, eval_context))

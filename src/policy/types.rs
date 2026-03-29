@@ -259,6 +259,8 @@ pub enum RuleId {
     MinRiskScore,
     MaxProtocolUtilization,
     MinProtocolTvl,
+    MinAlternativesConsidered,
+    MaxConfidenceThreshold,
 
 }
 
@@ -274,7 +276,9 @@ impl fmt::Display for RuleId {
             RuleId::MaxDailySpend => "max_daily_spend",
             RuleId::MinRiskScore => "min_risk_score",
             RuleId::MaxProtocolUtilization => "max_protocol_utilization",
-            RuleId::MinProtocolTvl => "min_protocol_tvl"
+            RuleId::MinProtocolTvl => "min_protocol_tvl",
+            RuleId::MinAlternativesConsidered => "min_alternatives_considered",
+            RuleId::MaxConfidenceThreshold => "max_confidence_threshold",
         };
         write!(f, "{s}")
     }
@@ -344,6 +348,15 @@ pub enum Violation {
         max: Money,
     },
     CannotEvaluate(CannotEvaluateReason),
+    // Reasoning audit violations
+    InsufficientAlternatives {
+        considered: u32,
+        minimum_required: u32,
+    },
+    ConfidenceTooHigh {
+        stated_confidence: f64,
+        max_allowed: f64,
+    },
     // TODO (Cyndie): Add MaxPositionsExceeded, a cap on how many simulatenous positions a user can have. Will come in handy when we add Vaults and LP yield strategies post MVP
 }
 
@@ -382,6 +395,12 @@ impl fmt::Display for Violation {
             }
             Violation::CannotEvaluate(reason) => {
                 write!(f, "cannot evaluate: {reason}")
+            }
+            Violation::InsufficientAlternatives { considered, minimum_required } => {
+                write!(f, "agent considered {considered} alternatives, minimum {minimum_required} required")
+            }
+            Violation::ConfidenceTooHigh { stated_confidence, max_allowed } => {
+                write!(f, "agent confidence {stated_confidence:.2} exceeds maximum {max_allowed:.2} threshold")
             }
         }
     }
@@ -466,6 +485,28 @@ pub struct TransactionRequest {
     pub target_address: String,
 }
 
+// ── ReasoningTrace ──────────────────────────────────────────
+
+/// Structured reasoning output that the agent must produce before any action.
+/// The policy engine can evaluate this to check reasoning quality,
+/// not just action compliance.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReasoningTrace {
+    pub goal: String,
+    pub alternatives_considered: Vec<AlternativeConsidered>,
+    pub confidence: f64,
+    pub context_sources: Vec<String>,
+}
+
+/// A single alternative the agent evaluated and rejected (or chose).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AlternativeConsidered {
+    pub protocol: String,
+    pub action: String,
+    pub rejection_reason: Option<String>,
+}
+
+
 // ── EvaluationContext ───────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -478,6 +519,8 @@ pub struct EvaluationContext {
     pub protocol_risk_score: Option<RiskScore>,
     pub protocol_utilization: Option<BasisPoints>,
     pub protocol_tvl: Option<Money>,
+    #[serde(default)]
+    pub reasoning: Option<ReasoningTrace>,
 }
 
 // ── EngineReason ────────────────────────────────────────────
