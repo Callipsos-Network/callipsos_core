@@ -36,6 +36,7 @@ fn full_context() -> EvaluationContext {
         protocol_risk_score: Some(RiskScore::try_new(dec!(0.85)).unwrap()),
         protocol_utilization: Some(BasisPoints::from_percent(60).unwrap()),
         protocol_tvl: Some(Money::try_new(dec!(500_000_000)).unwrap()),
+        reasoning: None,
     }
 }
 
@@ -244,6 +245,7 @@ fn only_indeterminate_capable_rules_all_missing_data_returns_blocked() {
         protocol_risk_score: None,
         protocol_utilization: None,
         protocol_tvl: None,
+        reasoning: None,
     };
 
     let verdict = evaluate(&rules, &test_request(), &ctx);
@@ -277,6 +279,7 @@ fn indeterminate_first_fail_later_both_captured() {
         protocol_risk_score: None,
         protocol_utilization: None,
         protocol_tvl: None,
+        reasoning: None,
     };
 
     let verdict = evaluate(&rules, &test_request(), &ctx);
@@ -329,6 +332,7 @@ fn all_rules_fail_total_chaos() {
         protocol_risk_score: Some(RiskScore::try_new(dec!(0.30)).unwrap()),
         protocol_utilization: Some(BasisPoints::from_percent(95).unwrap()),
         protocol_tvl: Some(Money::try_new(dec!(1_000_000)).unwrap()),
+        reasoning: None,
     };
 
     let verdict = evaluate(&rules, &req, &ctx);

@@ -35,6 +35,7 @@ fn test_context() -> EvaluationContext {
         protocol_risk_score: None,
         protocol_utilization: None,
         protocol_tvl: None,
+        reasoning: None,
     }
 }    
 
