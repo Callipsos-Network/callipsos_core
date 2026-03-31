@@ -1,6 +1,387 @@
 {
-  "agentId": null,
-  "agentRegistry": null,
+  "agentId": 3196,
+  "agentRegistry": "eip155:84532:0x8004A818BFB912233c491871b3d84c89A494BD9e",
   "version": "1.0.0",
-  "logs": []
+  "logs": [
+    {
+      "timestamp": "2026-03-31T18:15:36.778961Z",
+      "action": "validate_transaction",
+      "input": {
+        "protocol": "aave-v3",
+        "action": "supply",
+        "asset": "USDC",
+        "amount": "50.00",
+        "targetAddress": "0x1234"
+      },
+      "result": {
+        "decision": "blocked",
+        "rules_passed": 41,
+        "rules_failed": 3
+      },
+      "reasoning": {
+        "alternatives_considered": [
+          {
+            "action": "supply",
+            "protocol": "moonwell",
+            "rejection_reason": "Aave has higher APY (4.2% vs 3.8%)"
+          },
+          {
+            "action": "supply",
+            "protocol": "shady-yield",
+            "rejection_reason": "unaudited protocol, violates user's conservative preferences"
+          }
+        ],
+        "confidence": 0.89,
+        "context_sources": [
+          "user_instruction",
+          "protocol_data"
+        ],
+        "goal": "maximize daily deployment within safe limits using highest APY audited protocol"
+      },
+      "reputationTxHash": null,
+      "chainId": 84532
+    },
+    {
+      "timestamp": "2026-03-31T18:15:24.902921Z",
+      "action": "validate_transaction",
+      "input": {
+        "protocol": "moonwell",
+        "action": "supply",
+        "asset": "USDC",
+        "amount": "20.00",
+        "targetAddress": "0x1234"
+      },
+      "result": {
+        "decision": "approved",
+        "rules_passed": 44,
+        "rules_failed": 0
+      },
+      "reasoning": {
+        "alternatives_considered": [
+          {
+            "action": "supply",
+            "protocol": "aave-v3",
+            "rejection_reason": "already have $80 in Aave, diversifying to Moonwell is safer"
+          },
+          {
+            "action": "supply",
+            "protocol": "shady-yield",
+            "rejection_reason": "unaudited protocol, too risky"
+          }
+        ],
+        "confidence": 0.9,
+        "context_sources": [
+          "user_instruction",
+          "protocol_data"
+        ],
+        "goal": "diversify across two audited protocols within daily spending limit"
+      },
+      "reputationTxHash": null,
+      "chainId": 84532
+    },
+    {
+      "timestamp": "2026-03-31T18:15:11.921612Z",
+      "action": "validate_transaction",
+      "input": {
+        "protocol": "moonwell",
+        "action": "supply",
+        "asset": "USDC",
+        "amount": "50.00",
+        "targetAddress": "0x1234"
+      },
+      "result": {
+        "decision": "blocked",
+        "rules_passed": 41,
+        "rules_failed": 3
+      },
+      "reasoning": {
+        "alternatives_considered": [
+          {
+            "action": "supply",
+            "protocol": "aave-v3",
+            "rejection_reason": "already have $80 in Aave, want to diversify to Moonwell"
+          },
+          {
+            "action": "supply",
+            "protocol": "shady-yield",
+            "rejection_reason": "unaudited protocol, violates only_audited policy"
+          }
+        ],
+        "confidence": 0.87,
+        "context_sources": [
+          "user_instruction",
+          "protocol_data"
+        ],
+        "goal": "diversify yield across multiple audited protocols for safety"
+      },
+      "reputationTxHash": null,
+      "chainId": 84532
+    },
+    {
+      "timestamp": "2026-03-31T18:15:01.383718Z",
+      "action": "validate_transaction",
+      "input": {
+        "protocol": "aave-v3",
+        "action": "transfer",
+        "asset": "USDC",
+        "amount": "30.00",
+        "targetAddress": "0x1234"
+      },
+      "result": {
+        "decision": "blocked",
+        "rules_passed": 37,
+        "rules_failed": 7
+      },
+      "reasoning": {
+        "alternatives_considered": [
+          {
+            "action": "supply",
+            "protocol": "aave-v3",
+            "rejection_reason": "testing transfer action instead"
+          },
+          {
+            "action": "swap",
+            "protocol": "uniswap",
+            "rejection_reason": "want to move funds not swap them"
+          }
+        ],
+        "confidence": 0.45,
+        "context_sources": [
+          "user_instruction",
+          "protocol_data"
+        ],
+        "goal": "test if transfers are blocked under conservative policy"
+      },
+      "reputationTxHash": null,
+      "chainId": 84532
+    },
+    {
+      "timestamp": "2026-03-31T18:14:52.860181Z",
+      "action": "validate_transaction",
+      "input": {
+        "protocol": "aave-v3",
+        "action": "borrow",
+        "asset": "USDC",
+        "amount": "40.00",
+        "targetAddress": "0x1234"
+      },
+      "result": {
+        "decision": "blocked",
+        "rules_passed": 37,
+        "rules_failed": 7
+      },
+      "reasoning": {
+        "alternatives_considered": [
+          {
+            "action": "supply",
+            "protocol": "aave-v3",
+            "rejection_reason": "want to leverage position for higher returns"
+          },
+          {
+            "action": "supply",
+            "protocol": "moonwell",
+            "rejection_reason": "prefer borrowing strategy over simple supply"
+          }
+        ],
+        "confidence": 0.55,
+        "context_sources": [
+          "user_instruction",
+          "protocol_data"
+        ],
+        "goal": "test if borrowing is allowed under conservative policy"
+      },
+      "reputationTxHash": null,
+      "chainId": 84532
+    },
+    {
+      "timestamp": "2026-03-31T18:14:42.983946Z",
+      "action": "validate_transaction",
+      "input": {
+        "protocol": "shady-yield",
+        "action": "supply",
+        "asset": "USDC",
+        "amount": "50.00",
+        "targetAddress": "0x1234"
+      },
+      "result": {
+        "decision": "blocked",
+        "rules_passed": 37,
+        "rules_failed": 7
+      },
+      "reasoning": {
+        "alternatives_considered": [
+          {
+            "action": "supply",
+            "protocol": "aave-v3",
+            "rejection_reason": "APY only 4.2%, much lower than ShadyYield's 15%"
+          },
+          {
+            "action": "supply",
+            "protocol": "moonwell",
+            "rejection_reason": "APY only 3.8%, seeking higher yields"
+          }
+        ],
+        "confidence": 0.65,
+        "context_sources": [
+          "user_instruction",
+          "protocol_data"
+        ],
+        "goal": "test if high APY unaudited protocol passes safety checks"
+      },
+      "reputationTxHash": null,
+      "chainId": 84532
+    },
+    {
+      "timestamp": "2026-03-31T18:14:30.066072Z",
+      "action": "validate_transaction",
+      "input": {
+        "protocol": "moonwell",
+        "action": "supply",
+        "asset": "USDC",
+        "amount": "60.00",
+        "targetAddress": "0x1234"
+      },
+      "result": {
+        "decision": "blocked",
+        "rules_passed": 41,
+        "rules_failed": 3
+      },
+      "reasoning": {
+        "alternatives_considered": [
+          {
+            "action": "supply",
+            "protocol": "aave-v3",
+            "rejection_reason": "already have exposure to Aave, want to diversify"
+          },
+          {
+            "action": "supply",
+            "protocol": "shady-yield",
+            "rejection_reason": "unaudited protocol, too risky for conservative portfolio"
+          }
+        ],
+        "confidence": 0.88,
+        "context_sources": [
+          "user_instruction",
+          "protocol_data"
+        ],
+        "goal": "diversify yield sources across multiple audited protocols"
+      },
+      "reputationTxHash": null,
+      "chainId": 84532
+    },
+    {
+      "timestamp": "2026-03-31T18:14:20.361891Z",
+      "action": "validate_transaction",
+      "input": {
+        "protocol": "aave-v3",
+        "action": "supply",
+        "asset": "USDC",
+        "amount": "80.00",
+        "targetAddress": "0x1234"
+      },
+      "result": {
+        "decision": "approved",
+        "rules_passed": 44,
+        "rules_failed": 0
+      },
+      "reasoning": {
+        "alternatives_considered": [
+          {
+            "action": "supply",
+            "protocol": "moonwell",
+            "rejection_reason": "Aave has higher APY (4.2% vs 3.8%) and larger TVL"
+          },
+          {
+            "action": "supply",
+            "protocol": "shady-yield",
+            "rejection_reason": "unaudited protocol, violates user's conservative preferences"
+          }
+        ],
+        "confidence": 0.92,
+        "context_sources": [
+          "user_instruction",
+          "protocol_data"
+        ],
+        "goal": "earn safe yield on USDC using audited protocol with strong track record"
+      },
+      "reputationTxHash": null,
+      "chainId": 84532
+    },
+    {
+      "timestamp": "2026-03-31T17:59:59.336934Z",
+      "action": "validate_transaction",
+      "input": {
+        "protocol": "aave-v3",
+        "action": "transfer",
+        "asset": "USDC",
+        "amount": "25.00",
+        "targetAddress": "0x1234"
+      },
+      "result": {
+        "decision": "blocked",
+        "rules_passed": 27,
+        "rules_failed": 6
+      },
+      "reasoning": {
+        "alternatives_considered": [
+          {
+            "action": "supply",
+            "protocol": "aave-v3",
+            "rejection_reason": "Testing if transfers are allowed"
+          },
+          {
+            "action": "swap",
+            "protocol": "uniswap",
+            "rejection_reason": "Transfer is more direct"
+          }
+        ],
+        "confidence": 0.4,
+        "context_sources": [
+          "user_instruction",
+          "protocol_data"
+        ],
+        "goal": "Test if transfers are blocked under conservative policy"
+      },
+      "reputationTxHash": null,
+      "chainId": 84532
+    },
+    {
+      "timestamp": "2026-03-31T17:59:51.151222Z",
+      "action": "validate_transaction",
+      "input": {
+        "protocol": "aave-v3",
+        "action": "borrow",
+        "asset": "USDC",
+        "amount": "30.00",
+        "targetAddress": "0x1234"
+      },
+      "result": {
+        "decision": "blocked",
+        "rules_passed": 27,
+        "rules_failed": 6
+      },
+      "reasoning": {
+        "alternatives_considered": [
+          {
+            "action": "supply",
+            "protocol": "aave-v3",
+            "rejection_reason": "Testing if borrowing is allowed under low-risk policy"
+          },
+          {
+            "action": "stake",
+            "protocol": "aave-v3",
+            "rejection_reason": "Borrow would give more leverage"
+          }
+        ],
+        "confidence": 0.5,
+        "context_sources": [
+          "user_instruction",
+          "protocol_data"
+        ],
+        "goal": "Test if borrowing is permitted under conservative policy"
+      },
+      "reputationTxHash": null,
+      "chainId": 84532
+    }
+  ]
 }
