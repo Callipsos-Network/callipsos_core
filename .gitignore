@@ -29,6 +29,7 @@ target
 .env
 
 .vscode
+.claude/
 node_modules/
 
 # Lit Auth Storage File
