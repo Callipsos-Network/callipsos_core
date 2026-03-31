@@ -16,6 +16,8 @@ pub fn safety_first() -> Vec<PolicyRule> {
         PolicyRule::MinRiskScore(RiskScore::try_new(dec!(0.80)).unwrap()),
         PolicyRule::MaxProtocolUtilization(BasisPoints::from_percent(80).unwrap()),
         PolicyRule::MinProtocolTvl(Money::try_new(dec!(50_000_000)).unwrap()),
+        PolicyRule::MinAlternativesConsidered(2),
+        PolicyRule::MaxConfidenceThreshold(RiskScore::try_new(dec!(0.95)).unwrap()),
     ]
 }
 
@@ -31,6 +33,8 @@ pub fn balanced() -> Vec<PolicyRule> {
         PolicyRule::MinRiskScore(RiskScore::try_new(dec!(0.65)).unwrap()),
         PolicyRule::MaxProtocolUtilization(BasisPoints::from_percent(90).unwrap()),
         PolicyRule::MinProtocolTvl(Money::try_new(dec!(10_000_000)).unwrap()),
+        PolicyRule::MinAlternativesConsidered(1),
+        PolicyRule::MaxConfidenceThreshold(RiskScore::try_new(dec!(0.98)).unwrap()),
     ]
 }
 

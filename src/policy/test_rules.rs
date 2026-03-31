@@ -4,7 +4,7 @@ use uuid::Uuid;
 use crate::policy::rules::PolicyRule;
 use crate::policy::types::{
     Action, AssetSymbol, BasisPoints, EvaluationContext, Money, ProtocolId,
-    RuleId, RuleOutcome, TransactionRequest, UserId, RiskScore
+    RuleId, RuleOutcome, TransactionRequest, UserId, RiskScore, ReasoningTrace, AlternativeConsidered
 };
 
 // ── Test helpers ────────────────────────────────────────
@@ -416,6 +416,101 @@ fn min_protocol_tvl_exact_boundary_passes() {
     let result = rule.evaluate(&test_request(), &ctx);
 
     assert_eq!(result.outcome(), &RuleOutcome::Pass);
+}
+
+// ── 11. MinAlternativesConsidered ──────────────────────
+
+#[test]
+fn min_alternatives_pass() {
+    let rule = PolicyRule::MinAlternativesConsidered(2);
+    let mut ctx = test_context();
+    ctx.reasoning = Some(ReasoningTrace {
+        goal: "maximize yield".into(),
+        alternatives_considered: vec![
+            AlternativeConsidered {
+                protocol: "moonwell".into(),
+                action: "supply".into(),
+                rejection_reason: Some("lower APY".into()),
+            },
+            AlternativeConsidered {
+                protocol: "aave-v3".into(),
+                action: "supply".into(),
+                rejection_reason: None, // chosen option
+            },
+        ],
+        confidence: 0.85,
+        context_sources: vec!["user instruction".into()],
+    });
+    let result = rule.evaluate(&test_request(), &ctx);
+    assert_eq!(result.outcome(), &RuleOutcome::Pass);
+}
+
+#[test]
+fn min_alternatives_fail() {
+    let rule = PolicyRule::MinAlternativesConsidered(3);
+    let mut ctx = test_context();
+    ctx.reasoning = Some(ReasoningTrace {
+        goal: "maximize yield".into(),
+        alternatives_considered: vec![
+            AlternativeConsidered {
+                protocol: "aave-v3".into(),
+                action: "supply".into(),
+                rejection_reason: None,
+            },
+        ],
+        confidence: 0.85,
+        context_sources: vec!["user instruction".into()],
+    });
+    let result = rule.evaluate(&test_request(), &ctx);
+    assert_eq!(result.outcome(), &RuleOutcome::Fail);
+    assert_eq!(result.rule(), &RuleId::MinAlternativesConsidered);
+}
+
+#[test]
+fn min_alternatives_indeterminate_no_reasoning() {
+    let rule = PolicyRule::MinAlternativesConsidered(2);
+    let ctx = test_context(); // reasoning is None
+    let result = rule.evaluate(&test_request(), &ctx);
+    assert_eq!(result.outcome(), &RuleOutcome::Indeterminate);
+}
+
+// ── 12. MaxConfidenceThreshold ─────────────────────────
+
+#[test]
+fn max_confidence_pass() {
+    let rule = PolicyRule::MaxConfidenceThreshold(RiskScore::try_new(dec!(0.95)).unwrap());
+    let mut ctx = test_context();
+    ctx.reasoning = Some(ReasoningTrace {
+        goal: "safe yield".into(),
+        alternatives_considered: vec![],
+        confidence: 0.85,
+        context_sources: vec!["user instruction".into()],
+    });
+    let result = rule.evaluate(&test_request(), &ctx);
+    assert_eq!(result.outcome(), &RuleOutcome::Pass);
+}
+
+#[test]
+fn max_confidence_fail() {
+    let rule = PolicyRule::MaxConfidenceThreshold(RiskScore::try_new(dec!(0.90)).unwrap());
+    let mut ctx = test_context();
+    ctx.reasoning = Some(ReasoningTrace {
+        goal: "definitely this one".into(),
+        alternatives_considered: vec![],
+        confidence: 0.99,
+        context_sources: vec!["user instruction".into()],
+    });
+    let result = rule.evaluate(&test_request(), &ctx);
+    assert_eq!(result.outcome(), &RuleOutcome::Fail);
+    assert_eq!(result.rule(), &RuleId::MaxConfidenceThreshold);
+}
+
+#[test]
+fn max_confidence_indeterminate_no_reasoning() {
+    let rule = PolicyRule::MaxConfidenceThreshold(RiskScore::try_new(dec!(0.95)).unwrap());
+    let ctx = test_context(); // reasoning is None
+    let result = rule.evaluate(&test_request(), &ctx);
+    assert_eq!(result.outcome(), &RuleOutcome::Indeterminate);
 }
 
 

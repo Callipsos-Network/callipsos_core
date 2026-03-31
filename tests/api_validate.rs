@@ -68,8 +68,25 @@ fn safe_validate_body(user_id: &str) -> serde_json::Value {
             "audited_protocols": ["aave-v3", "moonwell"],
             "protocol_risk_score": 0.90,
             "protocol_utilization_pct": 0.50,
-            "protocol_tvl_usd": "500000000"
-        }
+            "protocol_tvl_usd": "500000000",
+            "reasoning": {
+                "goal": "test safe yield",
+                "alternatives_considered": [
+                    {
+                        "protocol": "moonwell",
+                        "action": "supply",
+                        "rejection_reason": "lower APY"
+                    },
+                    {
+                        "protocol": "aave-v3",
+                        "action": "supply",
+                        "rejection_reason": null
+                    }
+                ],
+                "confidence": 0.85,
+                "context_sources": ["test"]
+            }
+        },
     })
 }
 
@@ -92,6 +109,8 @@ async fn validate_safe_transaction_approved() {
     assert_eq!(response.status(), 200);
 
     let body: serde_json::Value = response.json().await.unwrap();
+    println!("Response body: {}", serde_json::to_string_pretty(&body).unwrap());
+
     assert_eq!(body["decision"], "approved");
     assert!(body["engine_reason"].is_null());
 
@@ -218,7 +237,35 @@ async fn validate_nonexistent_user_returns_404() {
     assert_eq!(response.status(), 404);
 }
 
-// ── 6. Two policies → all rules evaluated ───────────────────
+// ── 6. Invalid utilization input → 400 ─────────────────────
+
+#[tokio::test]
+async fn validate_negative_utilization_returns_400() {
+    let app = common::spawn_app().await;
+    let user_id = create_test_user(&app).await;
+    create_policy_with_preset(&app, &user_id, "safety_first").await;
+
+    let mut body = safe_validate_body(&user_id);
+    body["context"]["protocol_utilization_pct"] = json!(-0.10);
+
+    let client = reqwest::Client::new();
+    let response = client
+        .post(format!("{}/api/v1/validate", app.addr))
+        .json(&body)
+        .send()
+        .await
+        .expect("Failed to send request");
+
+    assert_eq!(response.status(), 400);
+
+    let body: serde_json::Value = response.json().await.unwrap();
+    assert!(body["error"]
+        .as_str()
+        .unwrap()
+        .contains("protocol_utilization_pct must be between 0.0 and 1.0 inclusive"));
+}
+
+// ── 7. Two policies → all rules evaluated ───────────────────
 
 #[tokio::test]
 async fn validate_two_policies_evaluates_all_rules() {
@@ -252,11 +299,11 @@ async fn validate_two_policies_evaluates_all_rules() {
 
     let body: serde_json::Value = response.json().await.unwrap();
     let results = body["results"].as_array().unwrap();
-    // safety_first has 9 rules + 2 custom = 11 total
-    assert_eq!(results.len(), 11);
+    // safety_first has 11 rules + 2 custom = 13 total
+    assert_eq!(results.len(), 13);
 }
 
-// ── 7. Validate logs to transaction_log ─────────────────────
+// ── 8. Validate logs to transaction_log ─────────────────────
 
 #[tokio::test]
 async fn validate_logs_to_transaction_log() {

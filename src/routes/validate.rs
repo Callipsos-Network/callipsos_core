@@ -14,7 +14,7 @@ use crate::policy::engine;
 use crate::policy::rules::PolicyRule;
 use crate::policy::types::{
     Action, AssetSymbol, BasisPoints, Decision, EvaluationContext, Money,
-    PolicyVerdict, ProtocolId, RiskScore, TransactionRequest, UserId,
+    PolicyVerdict, ProtocolId, RiskScore, TransactionRequest, UserId, ReasoningTrace
 };
 use crate::routes::AppState;
 use crate::signing::SigningResult;
@@ -42,6 +42,7 @@ pub struct ValidateContextRequest {
     pub protocol_risk_score: Option<f64>,
     pub protocol_utilization_pct: Option<f64>,
     pub protocol_tvl_usd: Option<String>,
+     pub reasoning: Option<ReasoningTrace>,
 }
 
 // ── Response struct ─────────────────────────────────────────
@@ -90,6 +91,11 @@ fn convert_request(req: &ValidateRequest) -> Result<(TransactionRequest, Evaluat
         .context
         .protocol_utilization_pct
         .map(|v| {
+            if !v.is_finite() || !(0.0..=1.0).contains(&v) {
+                return Err(AppError::BadRequest(format!(
+                    "protocol_utilization_pct must be between 0.0 and 1.0 inclusive, got {v}"
+                )));
+            }
             let bps = (v * 10_000.0) as u32;
             BasisPoints::new_checked(bps)
                 .map_err(|e| AppError::BadRequest(format!("Invalid protocol_utilization_pct: {e}")))
@@ -126,7 +132,7 @@ fn convert_request(req: &ValidateRequest) -> Result<(TransactionRequest, Evaluat
         protocol_risk_score,
         protocol_utilization,
         protocol_tvl,
-        reasoning: None,
+        reasoning: req.context.reasoning.clone(),
     };
 
     Ok((tx_request, eval_context))
