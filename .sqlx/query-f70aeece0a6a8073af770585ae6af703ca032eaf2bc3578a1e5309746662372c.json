@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE conversations\n            SET active = FALSE, updated_at = NOW()\n            WHERE user_id = $1 AND active = TRUE\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Uuid"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f70aeece0a6a8073af770585ae6af703ca032eaf2bc3578a1e5309746662372c"
+}
