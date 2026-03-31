@@ -33,6 +33,7 @@ use callipsos_core::db::conversation::{
     ConversationMessage, ConversationRow, MessageRole,
 };
 use callipsos_core::db::user::User;
+use callipsos_core::identity::AgentIdentity;
 use callipsos_core::policy::types::{Action, Decision, EngineReason, AlternativeConsidered, ReasoningTrace, };
 use callipsos_core::signing::SigningResult;
 
@@ -49,6 +50,8 @@ enum Command {
     Start,
     #[command(description = "View your active safety policies")]
     Policy,
+    #[command(description = "Check the agent's ERC-8004 identity status")]
+    Reputation,
     #[command(description = "Reset conversation and start fresh")]
     Reset,
     #[command(description = "Show available commands")]
@@ -70,6 +73,12 @@ struct BotState {
     http_client: HttpClient,
     /// Base URL of the running Callipsos API server.
     api_url: String,
+    /// ERC-8004 identity integration. None when on-chain identity is disabled.
+    identity: Option<Arc<AgentIdentity>>,
+    /// The registered ERC-8004 agent ID, if configured/registered.
+    agent_id: Option<u64>,
+    /// Optional link to the registration transaction for demo visibility.
+    agent_registration_tx_url: Option<String>,
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -125,13 +134,7 @@ struct ValidateResponse {
 struct RuleResultResponse {
     rule: String,
     outcome: String,
-    violation: Option<serde_json::Value>,
     message: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct CreateUserResponse {
-    id: Uuid,
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -428,7 +431,7 @@ impl SetPolicyTool {
             rules.push(json!({"BlockedActions": normalized}));
         }
         if let Some(score) = args.min_risk_score {
-            if score < 0.0 || score > 1.0 {
+            if !(0.0..=1.0).contains(&score) {
                 return Err(format!("min_risk_score must be between 0.0 and 1.0, got {}", score));
             }
             rules.push(json!({"MinRiskScore": format!("{:.2}", score)}));
@@ -654,6 +657,39 @@ async fn handle_policy(bot: Bot, msg: Message, state: BotState) -> HandlerResult
     Ok(())
 }
 
+/// /reputation — Show the agent's on-chain ERC-8004 identity status for the demo.
+async fn handle_reputation(bot: Bot, msg: Message, state: BotState) -> HandlerResult {
+    let agent_id = match (state.identity.as_ref(), state.agent_id) {
+        (Some(_identity), Some(agent_id)) => agent_id,
+        _ => {
+            bot.send_message(
+                msg.chat.id,
+                "ERC-8004 identity is not configured in this environment yet.",
+            )
+            .await?;
+            return Ok(());
+        }
+    };
+
+    let tx_url = state
+        .agent_registration_tx_url
+        .as_deref()
+        .unwrap_or("https://base-sepolia.blockscout.com/tx/0x3b5e056e00eaee35610ce21d8f8153a2060596452a48ac29468b214fbc4652c1");
+
+    let msg_text = format!(
+        "On-chain identity (ERC-8004)\n\n\
+         Agent ID: {}\n\
+         Registration tx: {}\n\
+         Chain: Base Sepolia\n\n\
+         Reputation publishing will be handled when the FeedbackAuth workflow is integrated.",
+        agent_id,
+        tx_url
+    );
+    bot.send_message(msg.chat.id, msg_text).await?;
+
+    Ok(())
+}
+
 /// /reset — Clear conversation history and deactivate policies. Fresh start.
 async fn handle_reset(bot: Bot, msg: Message, state: BotState) -> HandlerResult {
     let telegram_id = msg.from.as_ref().map(|u| u.id.0 as i64).ok_or("No user ID")?;
@@ -702,6 +738,7 @@ async fn handle_help(bot: Bot, msg: Message, _state: BotState) -> HandlerResult 
     Callipsos Agent — Commands\n\n\
     /start — Start or restart Callipsos\n\
     /policy — View your active safety policies\n\
+    /reputation — Check the agent's ERC-8004 identity status\n\
     /reset — Clear everything and start fresh\n\
     /help — Show this message\n\n\
     Or just chat with me naturally. Tell me about your portfolio and risk \
@@ -784,6 +821,34 @@ use rig::completion::Completion;
 use rig::message::{AssistantContent, UserContent};
 use rig::one_or_many::OneOrMany;
 
+fn optional_env(key: &str) -> Option<String> {
+    std::env::var(key).ok().and_then(|value| {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    })
+}
+
+async fn build_agent_preamble(state: &BotState) -> String {
+    let mut preamble = String::new();
+
+    if state.identity.is_some() {
+        if let Some(agent_id) = state.agent_id {
+            preamble.push_str(&format!(
+                "You are Callipsos, an ERC-8004 registered DeFi safety agent on Base Sepolia. \
+                 Your on-chain identity is agent ID {}. Maintain high-quality, policy-compliant behavior.\n\n",
+                agent_id
+            ));
+        }
+    }
+
+    preamble.push_str(AGENT_PREAMBLE);
+    preamble
+}
+
 async fn handle_message(bot: Bot, msg: Message, state: BotState) -> HandlerResult {
     let text = match msg.text() {
         Some(t) => t.to_string(),
@@ -856,9 +921,11 @@ async fn handle_message(bot: Bot, msg: Message, state: BotState) -> HandlerResul
         http_client: state.http_client.clone(),
     };
 
+    let agent_preamble = build_agent_preamble(&state).await;
+
     let agent = anthropic_client
         .agent("claude-sonnet-4-5-20250929")
-        .preamble(AGENT_PREAMBLE)
+        .preamble(&agent_preamble)
         .max_tokens(4096)
         .tool(validate_tool)
         .tool(set_policy_tool)
@@ -1244,28 +1311,10 @@ fn split_telegram_message(text: &str) -> Vec<String> {
         let split_at = remaining[..boundary].rfind('\n').unwrap_or(boundary);
 
         chunks.push(remaining[..split_at].to_string());
-        remaining = &remaining[split_at..].trim_start();
+        remaining = remaining[split_at..].trim_start();
     }
 
     chunks
-}
-
-#[cfg(test)]
-mod tests {
-    use super::split_telegram_message;
-
-    #[test]
-    fn split_telegram_message_handles_multibyte_characters() {
-        let prefix = "a".repeat(3999);
-        let text = format!("{prefix}😀\nsecond line");
-
-        let chunks = split_telegram_message(&text);
-
-        assert_eq!(chunks.len(), 2);
-        assert_eq!(chunks[0], prefix);
-        assert_eq!(chunks[1], "😀\nsecond line");
-        assert_eq!(chunks.concat(), text);
-    }
 }
 
 
@@ -1283,6 +1332,7 @@ async fn handle_command(
     match cmd {
         Command::Start => handle_start(bot, msg, state).await,
         Command::Policy => handle_policy(bot, msg, state).await,
+        Command::Reputation => handle_reputation(bot, msg, state).await,
         Command::Reset => handle_reset(bot, msg, state).await,
         Command::Help => handle_help(bot, msg, state).await,
     }
@@ -1316,6 +1366,104 @@ async fn main() -> anyhow::Result<()> {
     let api_url = std::env::var("CALLIPSOS_API_URL")
         .unwrap_or_else(|_| "http://127.0.0.1:3000".to_string());
 
+    let identity_registry = optional_env("ERC8004_IDENTITY_REGISTRY");
+    let reputation_registry = optional_env("ERC8004_REPUTATION_REGISTRY");
+    let rpc_url = optional_env("BASE_SEPOLIA_RPC_URL");
+    let private_key = optional_env("AGENT_PRIVATE_KEY");
+    let agent_registration_tx_url = optional_env("ERC8004_AGENT_REGISTRATION_TX_URL")
+        .or_else(|| {
+            Some(
+                "https://base-sepolia.blockscout.com/tx/0x3b5e056e00eaee35610ce21d8f8153a2060596452a48ac29468b214fbc4652c1"
+                    .to_string(),
+            )
+        });
+
+    let (identity, agent_id) = match (
+        rpc_url.as_deref(),
+        private_key.as_deref(),
+        identity_registry.as_deref(),
+        reputation_registry.as_deref(),
+    ) {
+        (Some(rpc_url), Some(private_key), Some(identity_registry), Some(reputation_registry)) => {
+            match AgentIdentity::new(
+                rpc_url,
+                private_key,
+                identity_registry,
+                reputation_registry,
+            ) {
+                Ok(identity) => {
+                    let identity = Arc::new(identity);
+                    let mut identity_enabled = true;
+                    let agent_id = match optional_env("ERC8004_AGENT_ID") {
+                        Some(id_str) => match id_str.parse::<u64>() {
+                            Ok(id) => {
+                                tracing::info!("Using existing ERC-8004 agent ID: {}", id);
+                                Some(id)
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    "Invalid ERC8004_AGENT_ID '{}': {}. ERC-8004 will stay enabled, but no existing agent ID will be used.",
+                                    id_str,
+                                    e
+                                );
+                                None
+                            }
+                        },
+                        None => {
+                            match optional_env("ERC8004_AGENT_URI") {
+                                Some(uri) => match identity.register_agent(&uri).await {
+                                    Ok(id) => {
+                                        tracing::info!("Registered ERC-8004 agent ID: {}", id);
+                                        tracing::info!("Add this to your .env: ERC8004_AGENT_ID={}", id);
+                                        Some(id)
+                                    }
+                                    Err(e) => {
+                                        tracing::warn!(
+                                            "ERC-8004 registration failed: {e}. Bot will continue with identity disabled."
+                                        );
+                                        identity_enabled = false;
+                                        None
+                                    }
+                                },
+                                None => {
+                                    tracing::warn!(
+                                        "ERC-8004 identity config is present but ERC8004_AGENT_ID and ERC8004_AGENT_URI are both missing. \
+                                         Bot will continue with identity disabled."
+                                    );
+                                    identity_enabled = false;
+                                    None
+                                }
+                            }
+                        }
+                    };
+
+                    if identity_enabled {
+                        (Some(identity), agent_id)
+                    } else {
+                        (None, None)
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        "ERC-8004 disabled — failed to initialize identity config: {e}"
+                    );
+                    (None, None)
+                }
+            }
+        }
+        (None, None, None, None) => {
+            tracing::info!("ERC-8004 disabled — no identity env vars configured");
+            (None, None)
+        }
+        _ => {
+            tracing::warn!(
+                "ERC-8004 disabled — incomplete identity env config. \
+                 Set BASE_SEPOLIA_RPC_URL, AGENT_PRIVATE_KEY, ERC8004_IDENTITY_REGISTRY, and ERC8004_REPUTATION_REGISTRY to enable it."
+            );
+            (None, None)
+        }
+    };
+
     tracing::info!("Callipsos Telegram bot starting");
     tracing::info!("API server: {}", api_url);
 
@@ -1323,6 +1471,9 @@ async fn main() -> anyhow::Result<()> {
         db: pool,
         http_client: HttpClient::new(),
         api_url,
+        identity,
+        agent_id,
+        agent_registration_tx_url,
     };
 
     // ── Bot + dispatcher ────────────────────────────────────
@@ -1361,4 +1512,22 @@ async fn main() -> anyhow::Result<()> {
         .await;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::split_telegram_message;
+
+    #[test]
+    fn split_telegram_message_handles_multibyte_characters() {
+        let prefix = "a".repeat(3999);
+        let text = format!("{prefix}😀\nsecond line");
+
+        let chunks = split_telegram_message(&text);
+
+        assert_eq!(chunks.len(), 2);
+        assert_eq!(chunks[0], prefix);
+        assert_eq!(chunks[1], "😀\nsecond line");
+        assert_eq!(chunks.concat(), text);
+    }
 }

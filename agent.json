@@ -15,7 +15,13 @@
   ],
   "x402Support": false,
   "active": true,
-  "registrations": [],
+  "registrations": [
+    {
+        "agentId": 3196,
+        "agentRegistry": "eip155:84532:0x8004A818BFB912233c491871b3d84c89A494BD9e",
+        "chainId": 84532
+    }
+  ],
   "capabilities": [
     "policy-engine",
     "transaction-validation",

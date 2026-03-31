@@ -97,7 +97,6 @@ pub fn decrypt(key: &Key<Aes256Gcm>, encoded: &str) -> Result<String, AppError> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aes_gcm::aead::KeyInit;
 
     fn test_key() -> Key<Aes256Gcm> {
         // Deterministic test key (not for production)
@@ -163,7 +162,7 @@ mod tests {
     fn truncated_data_fails() {
         let key = test_key();
         // Base64 of less than 12 bytes
-        let short = BASE64.encode(&[0u8; 8]);
+        let short = BASE64.encode([0u8; 8]);
         let result = decrypt(&key, &short);
         assert!(result.is_err());
     }

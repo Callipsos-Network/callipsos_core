@@ -103,6 +103,7 @@ Tradeoffs made during Phase 3 for the Telegram bot, Rig agent integration, and c
 | **Conversation JSONB array unbounded growth** | `trim_to_recent()` keeps last 40 messages. Called after every assistant response. | Implement sliding window with summarization: when trimming, ask Claude to summarize the dropped messages into a system context note. Preserves long-term memory without token overflow. | 40 messages is sufficient for hackathon sessions. Summarization requires an extra LLM call per trim, which adds latency and cost. |
 | **Tool-call persistence in conversation history** | Tool calls/results are preserved only in-memory during a live Rig turn. Persisted `conversations.messages_json` stores user text and final assistant text, but not the per-tool input/output chain even though the schema supports it | Persist `ToolCall { name, input, output }` on assistant messages and optionally rehydrate them into Rig-compatible history when resuming a session | Hackathon sessions are self-contained, `/reset` intentionally starts over, and authoritative policy/transaction outcomes already live in `policies` and `transaction_log`. The missing audit trail is real, but it does not change the visible demo behavior. |
 | **Session-scoped memory, not identity-scoped memory** | Conversation state is keyed by the active Telegram session. `/reset` deactivates the current conversation and starts a new one. Nothing today loads durable memory by agent identity | Add a separate identity-linked memory layer keyed by ERC-8004 / wallet identity. Session chat can reset, while durable agent memory survives across chats and devices | The hackathon bot is optimized for testing loops, not long-lived autonomous identity. Durable memory becomes worth building when ERC-8004 identity is first-class and we want the agent to remember work across sessions. |
+| **ERC-8004 reputation flow deferred** | ERC-8004 identity registration is live, but the bot does not publish or query on-chain reputation. Direct `authorizeFeedback`, `giveFeedback`, and `getSummary` calls against the Base Sepolia registry reverted in testing | Integrate the proper FeedbackAuth / ChaosChain workflow for reputation publication and switch reads to the supported SDK or contract path once the deployed flow is confirmed | For the hackathon, the on-chain identity NFT is the important milestone. ChaosChain's docs describe a FeedbackAuth-mediated reputation flow that is usually handled by their SDK/workflow stack, so shipping identity-only is the safest honest MVP. |
 | **Telegram Markdown parsing** | Removed all `parse_mode(Markdown)` calls. All bot messages sent as plain text. | Re-enable Markdown with proper escaping (MarkdownV2 requires escaping of `_*[]()~>#+-=\|{}.!`). Or use HTML parse mode which has simpler escaping rules. | Telegram's Markdown parser rejects unescaped special characters. `!` in welcome messages caused `Bad Request: can't parse entities`. Plain text works everywhere with zero escaping issues. |
 | **Agent loop approach** | Manual completion loop with `agent.completion()` + `.send()`. Execute tools manually between turns. Send Telegram progress messages after each tool call. | Use Rig's `Hook` trait for per-request tool call observation. Implement a hook that sends Telegram messages on each tool execution. Cleaner architecture, less manual loop code. | Rig's hook system requires holding a reference to `Bot` and `ChatId` inside the hook, which is non-trivial with Rig's ownership model. Manual loop gives us full control over the UX and was faster to build. |
 | **Portfolio amount hardcoded in tool** | `ValidateTool.portfolio_total_usd` defaults to `"1000.00"`. Agent preamble tells Claude to use whatever amount the user states. | Parse the stated amount from conversation history and pass dynamically to the tool. Or add a `SetPortfolioTool` that the agent calls to update the amount. | The preamble handles it for demo purposes. Claude reads "$1000" from the user message and uses it in reasoning, even though the tool sends a fixed context value. Correct dynamic extraction needs NLP parsing. |
@@ -111,8 +112,165 @@ Tradeoffs made during Phase 3 for the Telegram bot, Rig agent integration, and c
 | **Sponsorship/donation flow** | Text note in `/help`: "If you enjoy using Callipsos, consider supporting compute costs." | Add an inline button linking to a donation address or payment page. Track contributions per user. | Not in the onboarding flow (adds friction). Placed in `/help` where users see it after getting value. Implementation is a button + address, trivial to add. |
 | **Bot name vs username** | Display name: "CallipsosDev". Username: `@callipsos_agent_bot`. Username is permanent. | Create a production bot with a clean username when shipping to mainnet. Retire the dev bot or keep it for testing. | Display name is changeable via BotFather anytime. Username `callipsos_agent_bot` works for production anyway. |
 | **Default policy scaling** | Tool description tells Claude to scale `max_transaction_amount` and `max_daily_spend` relative to portfolio size (~10% and ~10-20% respectively). Percentage-based rules are inherently portfolio-agnostic. | Build dynamic default calculation into the tool itself. Tool reads portfolio size and computes absolute values before calling the API. | Claude does the math from conversation context. A user with $10 gets ~$1 defaults, $1000 gets ~$100. No code change needed for scaling. The LLM handles the arithmetic. |
-| **Agent identity is not wired into the conversation stack yet** | The bot operates as a Telegram-scoped assistant today. ERC-8004 identity exists conceptually in the project narrative, but not yet as a first-class key in the conversation, policy, or memory model | Introduce an agent identity model that links conversations, policies, transaction logs, and long-term memory to the agent's on-chain identity | Identity work was intentionally sequenced after the conversational MVP. The current bot proves the safety workflow; the next phase makes that workflow portable across sessions and on-chain personas. |
+| **Agent identity is only partially wired into the conversation stack** | The bot now registers and exposes an ERC-8004 identity, but conversations, policies, transaction logs, and long-term memory are still keyed primarily by Telegram user/session rather than agent identity | Introduce an agent identity model that links conversations, policies, transaction logs, and long-term memory to the agent's on-chain identity | Identity work was intentionally sequenced after the conversational MVP. The current bot proves the safety workflow and now anchors it to an on-chain agent NFT; the next phase makes that identity first-class across memory and policy state. |
  
+### ERC-8004 Reputation Handoff Notes
+
+What is live today:
+- Identity registration is live on Base Sepolia. Callipsos successfully minted ERC-8004 agent ID `3196` on `2026-03-31` in tx [`0x3b5e056e00eaee35610ce21d8f8153a2060596452a48ac29468b214fbc4652c1`](https://base-sepolia.blockscout.com/tx/0x3b5e056e00eaee35610ce21d8f8153a2060596452a48ac29468b214fbc4652c1).
+- The Telegram bot exposes `/reputation`, but in hackathon scope it reports identity status only: `agentId`, chain, and registration tx.
+- The bot no longer performs any on-chain reputation writes or reads during normal conversation flow.
+
+What we tried and why it was removed:
+- We initially assumed the Reputation Registry could be used directly from the bot with `authorizeFeedback(...)`, `giveFeedback(...)`, and `getSummary(...)`.
+- In practice, all three assumptions failed against the deployed Base Sepolia flow:
+  - startup `authorizeFeedback(...)` reverted
+  - best-effort `giveFeedback(...)` after approved validations reverted
+  - read-path `getSummary(...)` / `get_reputation(...)` reverted, which made both `/reputation` and preamble enrichment noisy and unreliable
+- We removed those calls because identity registration was the important sponsor-track milestone, while repeated revert warnings would weaken the demo.
+
+What was wrong with the original assumption:
+- We treated the Reputation Registry like a simple writable score table. ChaosChain's docs describe a stricter ERC-8004 flow where feedback publication depends on a `feedbackAuth` authorization payload.
+- We assumed self-feedback from the bot operator address was acceptable. The deployed flow appears to expect an authorized client or workflow actor, not arbitrary direct self-submission from the bot.
+- We assumed aggregate reputation could be fetched with a simple summary call suitable for every-message preamble injection. The supported read path may instead live behind ChaosChain's SDK or a different contract interface.
+- We briefly framed reputation as "persistent identity as memory." That was too strong. Reputation is at best a coarse cross-session signal; it is not a substitute for durable memory, tool history, policy history, or transaction reasoning history.
+
+Where to restart this integration later:
+1. Confirm the actual supported Base Sepolia reputation flow from ChaosChain's docs, SDK, or verified contract ABI before changing code.
+2. Decide whether Callipsos should publish reputation directly from the bot/API, or whether it should integrate with ChaosChain's intended workflow actor (for example an authorized service, gateway flow, or RewardsDistributor-style path).
+3. Implement `feedbackAuth` generation or registration properly. The docs describe the signed tuple as:
+   `(agentId, clientAddress, indexLimit, expiry, chainId, identityRegistry, signerAddress)`.
+4. Update [`identity.rs`](/Users/cyndie/Work/Callipsos/callipsos_core/src/identity.rs) only after the deployed ABI is confirmed. Do not assume the current `authorizeFeedback` / `giveFeedback` / `getSummary` signatures are production-correct just because identity registration works.
+5. Re-enable on-chain writes in [`telegram_bot.rs`](/Users/cyndie/Work/Callipsos/callipsos_core/src/bin/telegram_bot.rs) only after a direct end-to-end test succeeds on Base Sepolia.
+6. Re-enable `/reputation` reads only after the supported read path is confirmed. If reads remain expensive or fragile, cache them or fetch them only on explicit command, not on every chat turn.
+7. Only after reads are stable should reputation be injected back into the agent preamble. Even then, treat it as an identity/reputation signal, not as the bot's full persistent memory.
+
+Code locations to revisit:
+- [`identity.rs`](/Users/cyndie/Work/Callipsos/callipsos_core/src/identity.rs): current draft registry bindings and helper methods
+- [`telegram_bot.rs`](/Users/cyndie/Work/Callipsos/callipsos_core/src/bin/telegram_bot.rs): startup identity registration, `/reputation`, and the currently disabled reputation write/read paths
+- [`agent.json`](/Users/cyndie/Work/Callipsos/callipsos_core/agent.json): public metadata URI already used for identity registration
+
+### Real-Money Activation Checklist
+
+When Callipsos moves from simulated transactions to real user funds, this is the minimum hardening sequence. Do these in order:
+
+1. Decode real calldata, do not trust declared intent
+- Today the validator trusts `target_protocol`, `action`, `asset`, `amount_usd`, and `target_address` from the caller.
+- Before handling real money, [`validate.rs`](/Users/cyndie/Work/Callipsos/callipsos_core/src/routes/validate.rs) must decode calldata with alloy and derive the transaction intent from the actual call data and target contract.
+- For swaps, this likely means extending [`TransactionRequest`](/Users/cyndie/Work/Callipsos/callipsos_core/src/policy/types.rs) beyond a single `asset` field into `asset_in` / `asset_out` plus route metadata.
+
+2. Replace caller-supplied context with authoritative context
+- Today `EvaluationContext` is mostly caller-provided.
+- Real-funds mode requires server-side or signed-source truth for:
+  - current protocol exposure
+  - current asset exposure
+  - daily spend
+  - audited protocol list
+  - protocol risk score
+  - utilization
+  - TVL
+- Revisit [`EvaluationContext`](/Users/cyndie/Work/Callipsos/callipsos_core/src/policy/types.rs), [`validate.rs`](/Users/cyndie/Work/Callipsos/callipsos_core/src/routes/validate.rs), and `transaction_log`-driven spend calculations.
+
+3. Make action semantics explicit
+- Supply-like actions, exit actions, transfers, and swaps should not all be evaluated with the same additive assumptions.
+- Revisit [`engine.rs`](/Users/cyndie/Work/Callipsos/callipsos_core/src/policy/engine.rs) and [`rules.rs`](/Users/cyndie/Work/Callipsos/callipsos_core/src/policy/rules.rs) so:
+  - withdraw/exit paths are not trapped by spend/exposure math
+  - swaps evaluate both input and output side effects
+  - delegated or multi-step actions can project intermediate state safely
+
+4. Persist all signing artifacts
+- Today `transaction_log` stores verdicts, not full signing evidence.
+- Real-money mode should persist:
+  - transaction hash / calldata hash
+  - signing backend
+  - signature
+  - signer / PKP address
+  - attestation payload
+  - signing failure reason
+- Revisit [`transaction_log.rs`](/Users/cyndie/Work/Callipsos/callipsos_core/src/db/transaction_log.rs), [`signing/mod.rs`](/Users/cyndie/Work/Callipsos/callipsos_core/src/signing/mod.rs), and the stub attestation route.
+
+5. Tighten failure mode from demo-friendly to funds-safe
+- MVP intentionally returns policy verdicts even when signing fails.
+- With real money, the safety layer should fail closed if the cryptographic control path is unavailable or inconsistent.
+- Revisit [`routes/mod.rs`](/Users/cyndie/Work/Callipsos/callipsos_core/src/routes/mod.rs), [`validate.rs`](/Users/cyndie/Work/Callipsos/callipsos_core/src/routes/validate.rs), and the `SigningProvider` contract.
+
+6. Add simulation and post-state verification
+- Pre-execution `eth_call` simulation and post-execution state verification become part of the trust story once real assets move.
+- The policy engine is still the policy brain, but the runtime should verify that on-chain outcomes match what was approved.
+
+### Longer-Term Direction: Graduated Autonomy
+
+Current architecture:
+- Callipsos is a gatekeeper. The agent proposes a transaction, the server evaluates it, and the signing layer approves or blocks.
+- This is correct for the MVP because it proves the rules engine, reasoning audit, and signing flow in the simplest possible way.
+
+Potential evolution:
+- Move from a gatekeeper model to a proof-of-constraint model.
+- Instead of approving each transaction individually, the user mints or delegates a constrained signing capability whose limits are cryptographically enforced.
+- The policy engine still exists, but it becomes the source of constraint material for session keys, not the sole runtime guard.
+
+Why this matters:
+- Survives backend compromise better than a pure approval server. A compromised backend cannot approve transactions that the constrained key literally cannot sign.
+- Removes a round-trip from hot-path agent execution. Agents operate faster when they can act locally within a proven envelope.
+- Creates attestable trust for third parties and other agents. A counterparty can verify that an agent was operating under bounded authority rather than trusting a central server.
+
+What would need to change:
+- [`presets.rs`](/Users/cyndie/Work/Callipsos/callipsos_core/src/policy/presets.rs) and the policy rule model become inputs to session-key or signing-condition generation, not just runtime evaluation.
+- [`signing/mod.rs`](/Users/cyndie/Work/Callipsos/callipsos_core/src/signing/mod.rs) and [`signing/lit.rs`](/Users/cyndie/Work/Callipsos/callipsos_core/src/signing/lit.rs) would need a second mode: issue constrained capabilities, not just sign verdicts.
+- [`PolicyVerdict`](/Users/cyndie/Work/Callipsos/callipsos_core/src/policy/types.rs) may need an attestation-oriented serialization format that external verifiers can consume.
+- The current server-side approval path would remain as defense in depth, not as the only security boundary.
+
+Important framing:
+- Reputation is not memory.
+- Constraint proofs are not full execution safety.
+- Constraint-encoded keys prevent rule-breaking signatures; they do not automatically prevent bad decisions inside the allowed action space.
+
+### Delegated Agents and Commitment-Based Execution
+
+If Callipsos becomes a trust layer for agent-to-agent commerce, the delegation primitive should be designed explicitly rather than bolted on.
+
+Delegation model to revisit later:
+- Parent agent operates under a user policy.
+- Parent agent can issue a narrower delegated capability to a sub-agent.
+- Delegated capability inherits the parent safety bounds and adds tighter limits:
+  - narrower protocol allowlist
+  - smaller monetary cap
+  - short expiry
+  - limited number of operations
+  - optional delegate allowlist
+
+Why plain delegation is insufficient:
+- A compromised sub-agent can still sabotage funds within the delegated envelope.
+- Policy constraints reduce theft risk, but not necessarily poor or adversarial execution within valid action space.
+
+Additional controls this future model likely needs:
+- `AllowedDelegates`: which agent identities / addresses can receive delegated authority
+- `MaxDelegatedExposure`: total portfolio value under delegated control at one time
+- `MaxConcurrentDelegations` or similar cap on simultaneous sub-agent tasks
+- operation-count budgets, not just dollar limits
+- expiry windows short enough that a compromised delegate has a small blast radius
+
+Commitment-based execution is the natural complement:
+- For multi-step plans, do not hand over unrestricted execution for the whole sequence.
+- Represent the workflow as a declared plan with checkpoints.
+- Funds or authority move through phases conceptually similar to:
+  - `Committed`
+  - `Active`
+  - `Settled` / `Revoked`
+- After each step, rebuild context from actual chain state and re-evaluate the remaining plan before authorizing the next step.
+
+How this maps onto the current codebase:
+- Add an `ExecutionPlan` type above [`TransactionRequest`](/Users/cyndie/Work/Callipsos/callipsos_core/src/policy/types.rs) for multi-step intents.
+- Extend `PolicyVerdict` beyond simple Approved/Blocked semantics for plans, potentially with a committed-or-partially-authorized state.
+- Reuse [`EvaluationContext`](/Users/cyndie/Work/Callipsos/callipsos_core/src/policy/types.rs) iteratively: evaluate projected state, execute one step, read real state, re-evaluate next step.
+- Extend [`transaction_log`](/Users/cyndie/Work/Callipsos/callipsos_core/src/db/transaction_log.rs) with delegation IDs / plan IDs so the full chain of execution is auditable.
+- Treat on-chain post-state as ground truth. Attestations are useful, but if they conflict with observed state, chain state wins.
+
+What not to overclaim:
+- Commitment checkpoints reduce blast radius; they do not eliminate all delegated-agent risk.
+- Audited protocols can still produce adverse outcomes.
+- "Safe delegation" should be phrased as bounded-risk delegation, not risk-free autonomy.
+
 ### Decisions we're keeping
  
 | Decision | Why it's right |
@@ -146,6 +304,12 @@ _Tradeoffs that only matter at scale. Don't touch these until product-market fit
 | Persistent daily spend tracking in DB | Cross-session spend limits don't reset correctly | Users report unexpected approvals after restart |
 | Rate limiting on bot messages | Agent could spam Telegram with rapid tool calls | Aggressive agent preambles or adversarial users |
 | API authentication / ownership checks | Prevent arbitrary callers from reading or mutating other users' state | The API is exposed beyond a trusted local/demo environment |
+| Real calldata decoding + authoritative context | We stop trusting caller-declared intent/context once real user funds are at stake | Callipsos moves beyond simulation and starts protecting live capital |
 | Identity-linked durable memory | Keep agent context across `/reset`, new chats, devices, or clients | ERC-8004 identity becomes part of the product, not just the narrative |
+| Constraint-encoded session keys / proof-of-constraint signing | Replace pure gatekeeper approvals with cryptographically bounded autonomy | We optimize for low-latency autonomous execution and stronger compromise resistance |
+| Multi-step execution plans + commitment checkpoints | Safely handle rebalances, swaps, and delegated workflows that should be revocable mid-flight | Users expect automation across multiple actions, not just isolated single-step validations |
+| Delegate policy controls (`AllowedDelegates`, delegated exposure caps, operation budgets) | Let parent agents hire specialized sub-agents without giving them unbounded authority | Agent-to-agent commerce becomes part of the roadmap |
+| Post-execution state verification | Verify that actual chain outcomes match what was approved or delegated | Real money or delegated workflows make "approved intent" insufficient by itself |
+| ERC-8004 FeedbackAuth integration | Publish and read on-chain reputation without revert-prone direct calls | We move beyond identity-only and want verifiable reputation in the product, not just the demo narrative |
 | Persisted tool-call audit trail | Make conversation history replayable and auditable beyond final assistant text | Users or judges want to inspect how the agent reasoned through tool use after the fact |
 | Signed attestation storage and retrieval | Query historical signatures/verdicts without replaying validation | Third parties need to verify past approvals or build dashboards around them |

@@ -79,7 +79,6 @@ struct ValidateResponse {
 struct RuleResultResponse {
     rule: String,
     outcome: String,
-    violation: Option<serde_json::Value>,
     message: String,
 }
 
@@ -346,7 +345,7 @@ impl SetPolicyTool {
             rules.push(json!({"BlockedActions": normalized}));
         }
         if let Some(score) = args.min_risk_score {
-            if score < 0.0 || score > 1.0 {
+            if !(0.0..=1.0).contains(&score) {
                 return Err(format!("min_risk_score must be between 0.0 and 1.0, got {}", score));
             }
             rules.push(json!({"MinRiskScore": format!("{:.2}", score)}));
@@ -473,35 +472,6 @@ async fn create_user(client: &Client, api_url: &str) -> anyhow::Result<Uuid> {
     Ok(user.id)
 }
 
-/// Creates the safety_first policy for a user via POST /api/v1/policies.
-/// Uses the preset path — the server serializes the rules correctly.
-async fn create_policy(
-    client: &Client,
-    api_url: &str,
-    user_id: Uuid,
-) -> anyhow::Result<()> {
-    let body = CreatePolicyRequest {
-        user_id,
-        name: "safety_first".to_string(),
-        preset: Some("safety_first".to_string()),
-        rules: None,
-    };
-
-    let response = client
-        .post(format!("{}/api/v1/policies", api_url))
-        .json(&body)
-        .send()
-        .await?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let body = response.text().await.unwrap_or_default();
-        anyhow::bail!("Failed to create policy: {} — {}", status, body);
-    }
-
-    Ok(())
-}
-
 // ── Main ────────────────────────────────────────────────────
 
 #[tokio::main]
@@ -510,7 +480,7 @@ async fn main() -> anyhow::Result<()> {
 
     let api_url = env::var("CALLIPSOS_API_URL")
         .unwrap_or_else(|_| "http://127.0.0.1:3000".to_string());
-    let anthropic_api_key = env::var("ANTHROPIC_API_KEY")
+    env::var("ANTHROPIC_API_KEY")
         .expect("ANTHROPIC_API_KEY must be set");
 
     // ── Banner ──────────────────────────────────────────────
