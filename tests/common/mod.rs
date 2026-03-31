@@ -5,6 +5,7 @@ use tokio::net::TcpListener;
 
 pub struct TestApp {
     pub addr: String,
+    #[allow(dead_code)]
     pub db: PgPool,
 }
 

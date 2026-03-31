@@ -127,7 +127,7 @@ fn convert_request(req: &ValidateRequest) -> Result<(TransactionRequest, Evaluat
             .context
             .audited_protocols
             .iter()
-            .map(|s| ProtocolId::new(s))
+            .map(ProtocolId::new)
             .collect(),
         protocol_risk_score,
         protocol_utilization,
@@ -208,6 +208,12 @@ pub async fn validate(
         .map_err(|e| AppError::Internal(e.to_string()))?;
     let reasons_json = serde_json::to_value(&verdict.results)
         .map_err(|e| AppError::Internal(e.to_string()))?;
+    let reasoning_json = eval_context
+        .reasoning
+        .as_ref()
+        .map(serde_json::to_value)
+        .transpose()
+        .map_err(|e| AppError::Internal(e.to_string()))?;
 
     TransactionLogRow::create(
         &state.db,
@@ -216,6 +222,7 @@ pub async fn validate(
         request_json,
         verdict_str,
         reasons_json,
+        reasoning_json,
     )
     .await?;
 

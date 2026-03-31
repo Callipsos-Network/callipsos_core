@@ -16,6 +16,7 @@ pub struct TransactionLogRow {
     pub request_json: serde_json::Value,
     pub verdict: String,
     pub reasons_json: serde_json::Value,
+    pub reasoning_json: Option<serde_json::Value>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -27,30 +28,32 @@ impl TransactionLogRow {
         request_json: serde_json::Value,
         verdict: &str,
         reasons_json: serde_json::Value,
+        reasoning_json: Option<serde_json::Value>,
     ) -> Result<TransactionLogRow, AppError> {
         let id = Uuid::new_v4();
 
-        let row = sqlx::query_as!(
-            TransactionLogRow,
+        let row = sqlx::query_as::<_, TransactionLogRow>(
             r#"
-            INSERT INTO transaction_log (id, user_id, policy_id, request_json, verdict, reasons_json)
-            VALUES ($1, $2, $3, $4, $5, $6)
+            INSERT INTO transaction_log (id, user_id, policy_id, request_json, verdict, reasons_json, reasoning_json)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
             RETURNING
                 id,
-                user_id AS "user_id: UserId",
+                user_id,
                 policy_id,
                 request_json,
                 verdict,
                 reasons_json,
+                reasoning_json,
                 created_at
             "#,
-            id,
-            user_id.0,
-            policy_id,
-            request_json,
-            verdict,
-            reasons_json,
         )
+        .bind(id)
+        .bind(user_id)
+        .bind(policy_id)
+        .bind(request_json)
+        .bind(verdict)
+        .bind(reasons_json)
+        .bind(reasoning_json)
         .fetch_one(pool)
         .await?;
 
@@ -63,23 +66,23 @@ impl TransactionLogRow {
         pool: &PgPool,
         user_id: UserId,
     ) -> Result<Vec<TransactionLogRow>, AppError> {
-        let rows = sqlx::query_as!(
-            TransactionLogRow,
+        let rows = sqlx::query_as::<_, TransactionLogRow>(
             r#"
             SELECT
                 id,
-                user_id AS "user_id: UserId",
+                user_id,
                 policy_id,
                 request_json,
                 verdict,
                 reasons_json,
+                reasoning_json,
                 created_at
             FROM transaction_log
             WHERE user_id = $1
             ORDER BY created_at DESC
             "#,
-            user_id.0,
         )
+        .bind(user_id)
         .fetch_all(pool)
         .await?;
 
