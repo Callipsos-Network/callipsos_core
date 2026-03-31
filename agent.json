@@ -1,0 +1,42 @@
+{
+  "type": "https://eips.ethereum.org/EIPS/eip-8004#registration-v1",
+  "name": "Callipsos Safety Agent",
+  "description": "Programmable safety layer for autonomous AI agents managing DeFi portfolios on Base (other networks coming soon). Validates transactions against user-defined policies (amount limits, protocol allowlists, action restrictions, reasoning quality). Signs approved transactions via Lit Protocol PKP. Users set policies in natural language via Telegram.",
+  "image": "https://raw.githubusercontent.com/Callipsos-Network/callipsos_core/main/assets/Callipsos_Logo.png",
+  "services": [
+    {
+      "name": "web",
+      "endpoint": "https://github.com/Callipsos-Network/callipsos_core"
+    },
+    {
+      "name": "telegram",
+      "endpoint": "https://t.me/callipsos_agent_bot"
+    }
+  ],
+  "x402Support": false,
+  "active": true,
+  "registrations": [],
+  "capabilities": [
+    "policy-engine",
+    "transaction-validation",
+    "reasoning-audit",
+    "lit-protocol-signing",
+    "natural-language-policy-setting",
+    "defi-yield-scouting"
+  ],
+  "trust": {
+    "model": "reputation",
+    "policyEngine": {
+      "rules": 12,
+      "reasoningRules": 2,
+      "presets": ["safety_first", "balanced", "best_yields"],
+      "failMode": "closed",
+      "tests": 86
+    },
+    "signing": {
+      "provider": "lit-protocol",
+      "environment": "tee",
+      "keyType": "pkp"
+    }
+  }
+}
