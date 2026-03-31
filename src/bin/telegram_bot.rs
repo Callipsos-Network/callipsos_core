@@ -26,14 +26,14 @@ use teloxide::prelude::*;
 use teloxide::utils::command::BotCommands;
 use uuid::Uuid;
 use rig::client::{ProviderClient, CompletionClient};
-use rig::completion::Chat;
+// use rig::completion::Chat;
 
 use callipsos_core::db;
 use callipsos_core::db::conversation::{
     ConversationMessage, ConversationRow, MessageRole,
 };
 use callipsos_core::db::user::User;
-use callipsos_core::policy::types::{Action, Decision, EngineReason, UserId};
+use callipsos_core::policy::types::{Action, Decision, EngineReason, AlternativeConsidered, ReasoningTrace, };
 use callipsos_core::signing::SigningResult;
 
 type HandlerResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
@@ -100,6 +100,7 @@ struct ValidateContext {
     protocol_risk_score: Option<f64>,
     protocol_utilization_pct: Option<f64>,
     protocol_tvl_usd: Option<String>,
+    reasoning: Option<ReasoningTrace>,
 }
 
 #[derive(Debug, Serialize)]
@@ -173,6 +174,16 @@ struct ValidateTool {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct AlternativeArg {
+    /// Protocol name (e.g. "moonwell")
+    protocol: String,
+    /// Action type (e.g. "supply")  
+    action: String,
+    /// Why this was rejected. Omit if this is the chosen option.
+    rejection_reason: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 struct ValidateToolArgs {
     /// The target DeFi protocol (e.g. "aave-v3", "moonwell", "shady-yield", "uniswap")
     target_protocol: String,
@@ -184,6 +195,12 @@ struct ValidateToolArgs {
     amount_usd: String,
     /// The target contract address (use "0x1234" for demo purposes)
     target_address: String,
+    // Reasoning fields: What is the agent trying to achieve?
+    goal: Option<String>,
+    /// What alternatives were considered?
+    alternatives: Option<Vec<AlternativeArg>>,
+    /// Agent's confidence in this decision (0.0 to 1.0)
+    confidence: Option<f64>,
 }
 
 impl rig::tool::Tool for ValidateTool {
@@ -198,7 +215,16 @@ impl rig::tool::Tool for ValidateTool {
             name: "validate_transaction".to_string(),
             description: "Submit a DeFi transaction to Callipsos for policy validation. \
                 Returns whether the transaction was APPROVED or BLOCKED, with reasons for each rule check. \
-                Use this to attempt yield strategies. If blocked, read the reasons and try a different approach."
+                Use this to attempt yield strategies. If blocked, read the reasons and try a different approach.
+                MANDATORY: You MUST provide goal, alternatives, and confidence with EVERY call. \
+                - goal: what you're trying to achieve (e.g. 'maximize safe yield on USDC') \
+                - alternatives: other options you considered before choosing this one. Provide at least 2. \
+                  Each alternative needs: protocol, action, and rejection_reason (why you didn't pick it). \
+                - confidence: your confidence in this decision, 0.0 to 1.0. Be calibrated, not always 0.99. \
+                \
+                These fields are checked by reasoning audit rules. If you omit them, \
+                the transaction WILL BE BLOCKED automatically.
+                "
                 .to_string(),
             parameters: serde_json::to_value(schemars::schema_for!(ValidateToolArgs))
                 .unwrap_or_default(),
@@ -213,6 +239,32 @@ impl rig::tool::Tool for ValidateTool {
         )
         .map_err(|_| AgentError::Other(format!("Invalid action '{}'", args.action)))?;
 
+        let reasoning = if let (Some(goal), Some(confidence)) = (&args.goal, args.confidence) {
+        let alternatives = args.alternatives.as_deref().unwrap_or(&[])
+            .iter()
+            .map(|alt| AlternativeConsidered {
+                protocol: alt.protocol.clone(),
+                action: alt.action.clone(),
+                rejection_reason: alt.rejection_reason.clone(),
+            })
+            .collect();
+
+        let trace = Some(ReasoningTrace {
+            goal: goal.clone(),
+            alternatives_considered: alternatives,
+            confidence,
+            context_sources: vec!["user_instruction".into(), "protocol_data".into()],
+        });
+        tracing::info!("reasoning trace: goal={}, alternatives={}, confidence={}", 
+        goal, 
+        args.alternatives.as_ref().map(|a| a.len()).unwrap_or(0),
+        confidence
+        );
+        trace
+        } else {
+            None
+        };
+
         let context = ValidateContext {
             portfolio_total_usd: self.portfolio_total_usd.clone(),
             current_protocol_exposure_usd: "0.00".to_string(),
@@ -225,6 +277,7 @@ impl rig::tool::Tool for ValidateTool {
             protocol_risk_score: Some(0.90),
             protocol_utilization_pct: Some(0.50),
             protocol_tvl_usd: Some("500000000".to_string()),
+            reasoning,
         };
 
         let request = ValidateRequest {
@@ -392,6 +445,9 @@ impl SetPolicyTool {
             }
             rules.push(json!({"MinProtocolTvl": format!("{:.2}", tvl)}));
         }
+        // Always add reasoning audit rules
+        rules.push(json!({"MinAlternativesConsidered": 2}));
+        rules.push(json!({"MaxConfidenceThreshold": "0.95"}));
 
         Ok(json!(rules))
     }
@@ -424,8 +480,8 @@ impl rig::tool::Tool for SetPolicyTool {
                 ALWAYS fill in defaults for rules the user didn't mention. \
                 After setting the policy, list which rules came from the user and which are defaults."
                 .to_string(),
-            parameters: serde_json::to_value(schemars::schema_for!(SetPolicyToolArgs))
-                .unwrap_or_default(),
+                parameters: serde_json::to_value(schemars::schema_for!(SetPolicyToolArgs))
+                .unwrap_or_default(),    
         }
     }
 
@@ -1184,13 +1240,32 @@ fn split_telegram_message(text: &str) -> Vec<String> {
             break;
         }
 
-        let split_at = remaining[..MAX_LEN].rfind('\n').unwrap_or(MAX_LEN);
+        let boundary = remaining.floor_char_boundary(MAX_LEN);
+        let split_at = remaining[..boundary].rfind('\n').unwrap_or(boundary);
 
         chunks.push(remaining[..split_at].to_string());
         remaining = &remaining[split_at..].trim_start();
     }
 
     chunks
+}
+
+#[cfg(test)]
+mod tests {
+    use super::split_telegram_message;
+
+    #[test]
+    fn split_telegram_message_handles_multibyte_characters() {
+        let prefix = "a".repeat(3999);
+        let text = format!("{prefix}😀\nsecond line");
+
+        let chunks = split_telegram_message(&text);
+
+        assert_eq!(chunks.len(), 2);
+        assert_eq!(chunks[0], prefix);
+        assert_eq!(chunks[1], "😀\nsecond line");
+        assert_eq!(chunks.concat(), text);
+    }
 }
 
 

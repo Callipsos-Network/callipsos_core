@@ -4,7 +4,7 @@ use uuid::Uuid;
 use crate::policy::presets::{balanced, best_yields, safety_first};
 use crate::policy::rules::PolicyRule;
 use crate::policy::types::{
-    Action, BasisPoints, Money, RiskScore, RuleId, AssetSymbol, Decision, EvaluationContext, ProtocolId, TransactionRequest, UserId,
+    Action, BasisPoints, Money, RiskScore, RuleId, AssetSymbol, Decision, EvaluationContext, ProtocolId, TransactionRequest, UserId, ReasoningTrace, AlternativeConsidered
 };
 use crate::policy::engine::evaluate;
 
@@ -87,7 +87,23 @@ fn safe_context(portfolio: Money, protocol_exposure: Money, asset_exposure: Mone
         protocol_risk_score: Some(RiskScore::try_new(dec!(0.90)).unwrap()),
         protocol_utilization: Some(BasisPoints::from_percent(50).unwrap()),
         protocol_tvl: Some(Money::try_new(dec!(500_000_000)).unwrap()),
-        reasoning: None,
+        reasoning: Some(ReasoningTrace {
+            goal: "test transaction".into(),
+            alternatives_considered: vec![
+                AlternativeConsidered {
+                    protocol: "moonwell".into(),
+                    action: "supply".into(),
+                    rejection_reason: Some("lower APY".into()),
+                },
+                AlternativeConsidered {
+                    protocol: "aave-v3".into(),
+                    action: "supply".into(),
+                    rejection_reason: None,
+                },
+            ],
+            confidence: 0.85,
+            context_sources: vec!["test".into()],
+        }),
     }
 }
 
