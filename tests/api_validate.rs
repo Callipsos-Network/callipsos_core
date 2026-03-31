@@ -333,4 +333,8 @@ async fn validate_logs_to_transaction_log() {
     assert!(logs[0].policy_id.is_none());
     assert!(logs[0].request_json.is_object());
     assert!(logs[0].reasons_json.is_array());
+    assert!(logs[0].reasoning_json.is_some());
+    let reasoning = logs[0].reasoning_json.as_ref().unwrap();
+    assert_eq!(reasoning["goal"], "test safe yield");
+    assert_eq!(reasoning["confidence"], 0.85);
 }
